@@ -1,6 +1,10 @@
 {
     "files.associations": {
         "errno.h": "c",
-        "stdio.h": "c"
+        "stdio.h": "c",
+        "semaphore.h": "c",
+        "stat.h": "c",
+        "types.h": "c",
+        "unistd.h": "c"
     }
 }
