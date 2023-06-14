@@ -1,10 +1,8 @@
+INITSEG  = 0x9000	! we move boot here - out of the way
+SYSSEG   = 0x1000	! system loaded at 0x10000 (65536).
+SETUPSEG = 0x9020	! this is the current segment
+
 .globl begtext, begdata, begbss, endtext, enddata, endbss
-
-BOOTSEG  = 0x07c0			! original address of boot-sector
-INITSEG  = 0x9000			! we move boot here - out of the way
-SETUPSEG = 0x9020			! setup starts here
-
-
 .text
 begtext:
 .data
@@ -15,41 +13,50 @@ begbss:
 
 entry start
 start:
-    !设置cs=ds=es
-	mov	ax,cs
-    !mov ax,#INITSEG ?
-	mov	ds,ax   !(?)
-    mov es,ax
+    mov	ax,#SETUPSEG	! this is done in bootsect already, but...
+	mov	es,ax
 
-    mov ah,#0x03 !读光标位置
-    xor bh,bh 
-    int 0x10
+    mov	ah,#0x03		! read cursor pos
+	xor	bh,bh
+	int	0x10
+	
+	mov	cx,#26
+	mov	bx,#0x0007		! page 0, attribute 7 (normal)
+	mov	bp,#msg2
+	mov	ax,#0x1301		! write string, move cursor
+	int	0x10
 
-    mov cx,#29  ! cx寄存器放入字符串长度
-    mov bx,#0x0007 
-    mov bp,#msg2
-    !mov es,ax ! 要修改段寄存器的值（？）
-    mov ax,#0x1301 ! 写字符串，移动光标
-    int 0x10
+!读光标位置 存入 0x9000:0
 
-! ok, the read went well so we get current cursor position and save it for
-! posterity.
-! 获取光标位置 =>  0x9000:0
-	mov	ax,#INITSEG	! this is done in bootsect already, but...
-	mov	ds,ax
+    mov ax,#INITSEG
+    mov ds,ax
 	mov	ah,#0x03	! read cursor pos
 	xor	bh,bh
 	int	0x10		! save it in known place, con_init fetches
 	mov	[0],dx		! it from 0x90000.
 
-! Get memory size (extended mem, kB)
-! 获取拓展内存大小 => 0x9000:2
+!读内存大小 存入 0x9000:2
 	mov	ah,#0x88
 	int	0x15
 	mov	[2],ax
 
-! Get hd0 data
-! 获取硬盘参数 => 0x9000:80  大小：16B
+!读显示器模式 存入 0x9000:4-6
+
+	mov	ah,#0x0f
+	int	0x10
+	mov	[4],bx		! bh = display page
+	mov	[6],ax		! al = video mode, ah = window width
+
+
+	mov	ah,#0x12
+	mov	bl,#0x10
+	int	0x10
+	mov	[8],ax
+	mov	[10],bx
+	mov	[12],cx
+
+!读硬盘参数 第一个硬盘参数表的首地址是中断向量0x41的向量值
+
 	mov	ax,#0x0000
 	mov	ds,ax
 	lds	si,[4*0x41]
@@ -60,57 +67,71 @@ start:
 	rep
 	movsb
 
-! 前面修改了ds寄存器，这里将其设置为0x9000
-	mov ax,#INITSEG
-	mov ds,ax
-	mov ax,#SETUPSEG
-	mov	es,ax  
+! Get hd1 data
 
-!显示 Cursor POS: 字符串
-	mov	ah,#0x03		! read cursor pos
-	xor	bh,bh
-	int	0x10
-	mov	cx,#11
-	mov	bx,#0x0007		! page 0, attribute c 
-	mov	bp,#cur
-	mov	ax,#0x1301		! write string, move cursor
-	int	0x10
+	mov	ax,#0x0000
+	mov	ds,ax
+	lds	si,[4*0x46]
+	mov	ax,#INITSEG
+	mov	es,ax
+	mov	di,#0x0090
+	mov	cx,#0x10
+	rep
+	movsb
 
-!调用 print_hex 显示具体信息
-	mov ax,[0]
-	call print_hex
-	call print_nl
+!这里修改ds寄存器和es寄存器的值
+    mov ax,#INITSEG
+    mov ds,ax
+    mov ax,#SETUPSEG
+    mov es,ax
 
-!显示 Memory SIZE: 字符串
-	mov	ah,#0x03		! read cursor pos
-	xor	bh,bh
-	int	0x10
-	mov	cx,#12
-	mov	bx,#0x0007		! page 0, attribute c 
-	mov	bp,#mem
-	mov	ax,#0x1301		! write string, move cursor
-	int	0x10
+!字符串显示部分
+    mov ax,[0]
+    xor bh,bh
+    int 0x10
 
-!显示 具体信息
-	mov ax,[2]
-	call print_hex
+    mov cx,#15
+    mov bx,#0x0007
+    mov bp,#cur
+    mov ax,#0x1301
+    int 0x10
 
-!显示相应 提示信息
-	mov	ah,#0x03		! read cursor pos
-	xor	bh,bh
-	int	0x10
-	mov	cx,#25
-	mov	bx,#0x0007		! page 0, attribute c 
-	mov	bp,#cyl
-	mov	ax,#0x1301		! write string, move cursor
-	int	0x10
+!调用参考函数print_hex
+    mov ax,[0]
+    call print_hex
+    call print_nl
 
-!显示具体信息
-	mov ax,[0x80]
-	call print_hex
-	call print_nl
+!准备打印内存信息
+    mov ah,#0x03
+    xor bh,bh
+    int 0x10
 
-！显示 提示信息
+    mov cx,#12
+    mov bx,#0x0007
+    mov bp,#mem
+    mov ax,#0x1301
+    int 0x10
+
+    mov ax,[2]
+    call print_hex
+    call print_nl
+
+!准备打印硬盘信息
+    mov ah,#0x03
+    xor bh,bh
+    int 0x10
+
+    mov cx,#25
+    mov bx,#0x0007
+    mov bp,#cyl
+    mov ax,#0x1301
+    int 0x10
+
+    mov ax,[0x80]
+    call print_hex
+    call print_nl
+
+! Headers
 	mov	ah,#0x03		! read cursor pos
 	xor	bh,bh
 	int	0x10
@@ -120,12 +141,11 @@ start:
 	mov	ax,#0x1301		! write string, move cursor
 	int	0x10
 
-！显示 具体信息
 	mov ax,[0x80+0x02]
 	call print_hex
 	call print_nl
 
-！显示 提示信息
+! Sectors
 	mov	ah,#0x03		! read cursor pos
 	xor	bh,bh
 	int	0x10
@@ -135,7 +155,6 @@ start:
 	mov	ax,#0x1301		! write string, move cursor
 	int	0x10
 
-！显示 具体信息
 	mov ax,[0x80+0x0e]
 	call print_hex
 	call print_nl
@@ -143,24 +162,24 @@ start:
 !死循环
 l:  jmp l
 
-!以16进制方式打印ax寄存器里的16位数
 print_hex:
-	mov cx,#4   ! 4个十六进制数字
-	mov dx,ax   ! 将ax所指的值放入dx中，ax作为参数传递寄存器
+    mov cx,#4 !4个16进制数
+    mov dx,ax !ax作为参数传递寄存器
+
 print_digit:
-	rol dx,#4  ! 循环以使低4比特用上 !! 取dx的高4比特移到低4比特处。
+    rol dx,#4  ! 循环以使低4比特用上 !! 取dx的高4比特移到低4比特处。
 	mov ax,#0xe0f  ! ah = 请求的功能值,al = 半字节(4个比特)掩码。
 	and al,dl ! 取dl的低4比特值。
 	add al,#0x30  ! 给al数字加上十六进制0x30
 	cmp al,#0x3a
 	jl outp  !是一个不大于十的数字
 	add al,#0x07  !是a~f,要多加7
+
 outp:
 	int 0x10
 	loop print_digit
 	ret
-
-!打印回车换行
+!打印换行和回车
 print_nl:
 	mov ax,#0xe0d
 	int 0x10
@@ -170,22 +189,28 @@ print_nl:
 
 msg2:
 	.byte 13,10
-	.ascii "Now we are in SETUP ..."
+	.ascii "Now we are in SETUP."
 	.byte 13,10,13,10
+
+
 cur:
-	.ascii "Cursor POS:"
+    .ascii "Cursor Postion:"
+
 mem:
-	.ascii "Memory SIZE:"
+    .ascii "Memory Size:"
+
 cyl:
 	.ascii "KB"
 	.byte 13,10,13,10
 	.ascii "HD Info"
 	.byte 13,10
 	.ascii "Cylinders:"
+
 head:
 	.ascii "Headers:"
 sect:
 	.ascii "Secotrs:"
+
 
 .text
 endtext:
