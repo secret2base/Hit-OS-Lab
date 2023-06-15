@@ -5,6 +5,7 @@
         "semaphore.h": "c",
         "stat.h": "c",
         "types.h": "c",
-        "unistd.h": "c"
+        "unistd.h": "c",
+        "cstdio": "c"
     }
 }
