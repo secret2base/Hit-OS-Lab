@@ -9,35 +9,22 @@ void cpuio_bound(int last, int cpu_time, int io_time);
 
 int main(int argc, char * argv[])
 {
-    pid_t retpid1,retpid2,retpid3;
-    pid_t exit1,exit2,exit3;
-    retpid1=fork();
-    if(retpid1==0){
-        printf("Child Process 1 is running.\n");
-        cpuio_bound(10,1,0);
-    }
-    else if(retpid1>0){
-        retpid2=fork();
-        if(retpid2==0) {
-            printf("Child Process 2 is running.\n");
-            cpuio_bound(10,0,1);
-        }
-        else if(retpid2>0){
-            retpid3=fork();
-            if(retpid3==0){
-                printf("Child Process 3 is running.\n");
-                cpuio_bound(10,1,1);
-            }
-            else if(retpid3>0){
-                exit1=wait();
-                printf("Father Process get %d exit.\n",exit1);
-                exit2=wait();
-                printf("Father Process get %d exit.\n",exit2);
-                exit3=wait();
-                printf("Father Process get %d exit.\n",exit3);
-            }
-        }
-    }
+    pid_t nproc[5];
+	int i;
+	for(i=0;i<5;i++){
+		nproc[i]=fork();
+		if(nproc[i]==0){	//在子进程中
+			cpuio_bound(10,2*i,10-2*i);
+			return 0;	//子进程记得退出
+		}
+		else if(nproc[i]<0){
+			printf("Failed to create child process %d.\n ",i);
+		}
+	}
+	for(i=0;i<5;i++){
+		printf("Child PID : %d\n",nproc[i]);
+	}
+    wait();	//等待子进程退出
 	return 0;
 }
 
