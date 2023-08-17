@@ -54,23 +54,24 @@ void cpuio_bound(int last, int cpu_time, int io_time)
 	}
 }
 ```
-在上述程序基础上编写Ubuntu下的测试程序
+在上述程序基础上编写Ubuntu下的测试程序 ./lab3/process.c
 
 
 
-process.log出了点问题，0进程一直打印  
-sys_pause函数中加上一条判断，不再输出进程0的循环等待信息
+// process.log出了点问题，0进程一直打印  
+// sys_pause函数中加上一条判断，不再输出进程0的循环等待信息
 
-调度时间片修改在p->priority上
+//调度时间片修改在p->priority上
 
-process.log为输出的日志文件
+// process.log为输出的日志文件
 
-Linux 0.11上的gcc好像不支持双斜线注释
+// Linux 0.11上的gcc好像不支持双斜线注释
 
 
 #### 3.2 修改Linux 0.11源码实现进程轨迹跟踪
 按照顺序修改Linux 0.11内核代码
 首先按照实验手册6.2指导，为在内核启动时就打开log文件开始记录，直接在进程0中就增加log文件的打开以及文件描述符的绑定
+（ps. 进程0是系统初始化的一部分，在系统启动时创建，负责初始化各种数据结构和资源，随后切换到第一个用户进程；进程1是用户级别的初始化进程，通常是init，负责初始化用户空间，加载配置文件等，进程1是所有其他进程的父进程；进程2是系统的第一个用户进程，通常为bin/init，是用户级别的shell进程；所以为了更早开始记录进程信息，本实验选择在进程0后开始跟踪）
 ```c
 //在 init/main.c中增加如下部分
 
@@ -90,6 +91,73 @@ setup((void *) &drive_info);	//加载文件系统
 在内核状态下，无法使用write()函数，正如printf()和printk()之间的区别。这里6.3中直接给出了fprintk()函数作为参考，这一函数参考了printk()和sys_write()。
 
 Q:printf()和printk()的什么区别导致了使用场景不同？(见注释5)
+
+参考实验手册给出的fprintk()函数，将其放入kernel/printk.c中
+
+在kernel/sched.c中
+```c
+long volatile jiffies=0; //全局变量，记录从开机到现在时钟中断发生的次数
+...
+//在sched_init()函数中，定义了中断号0x20以及中断处理函数timer_interrupt
+set_intr_gate(0x20,&timer_interrupt);
+//到kernel/system_call.s中可找到timer_interrupt的实现
+//其中 incl jiffies 就是在增加该全局变量的值
+```
+在kernel/sched.c中
+```c
+outb_p(0x36,0x43);		/* binary, mode 3, LSB/MSB, ch 0 */
+outb_p(LATCH & 0xff , 0x40);	/* LSB */
+outb(LATCH >> 8 , 0x40);	/* MSB */
+//LATCH即为时钟频率
+```
+
+在准备好process.log记录以及了解完时钟中断后，开始在进程状态切换处增加log输出语句
+首先，根据进程状态转换关系可得
+![图片](./进程状态转换图.png)
+涉及到的文件如下
+> ./kernel/fork.c/copy_process
+./kernel/exit.c/do_exit,sys_waitpid
+./kernel/sched.c/schedule,sleep_on,interruptible_sleep_on,sys_pause,wake_up
+
+在每个状态改变处加入 fprintk(3,"%d\tStatus\t%d\n",p->pid,jiffies); 即可，详见本目录下相关文件
+
+
+#### 3.3 最终实现
+1.将写好的process.c文件在ubuntu下编译链接并运行，验证正确性，然后拷贝到Linux 0.11的img中
+注意：Linux 0.11和Ubuntu的环境有区别，不能用双斜线注释，且wait()函数必须带参数
+2.添加kernel/fprintk()
+3.修改init/main.c，增加日志文件
+4.在进程状态转换处增加日志输出,实验的Linux 0.11输出如下，共运行了5个进程
+![图片](./lab3.png)
+查看日志可以分析处进程的运行情况
+![图片](./lab3_log.png)
+与先前的分析一致，先是最开始用于初始化的进程1创建并就绪，随后是shell进程2，进程1进入等待，创建进程3并就绪，进程1和3均让出CPU，进程2进入执行态......
+5.修改时间片
+由读代码过程可知，Linux 0.11的调度算法是选counter值最大的就绪进程进行调度，运行态的进程counter会随时钟中断不断减少，是一种时间片轮转的算法。时间片的定义在./include/linux/sched.h
+```c
+#define INIT_TASK \
+/* state etc */	{ 0,15,15, \   /*这里的后两项就是counter和priority的值*/
+/* signals */	0,{{},},0, \
+/* ec,brk... */	0,0,0,0,0,0, \
+/* pid etc.. */	0,-1,0,0,0, \
+/* uid etc */	0,0,0,0,0,0, \
+/* alarm */	0,0,0,0,0,0, \
+/* math */	0, \
+/* fs info */	-1,0022,NULL,NULL,NULL,0, \
+/* filp */	{NULL,}, \
+	{ \
+		{0,0}, \
+/* ldt */	{0x9f,0xc0fa00}, \
+		{0x9f,0xc0f200}, \
+	}, \
+/*tss*/	{0,PAGE_SIZE+(long)&init_task,0x10,0,0,0,0,(long)&pg_dir,\
+	 0,0,0,0,0,0,0,0, \
+	 0,0,0x17,0x17,0x17,0x17,0x17,0x17, \
+	 _LDT(0),0x80000000, \
+		{} \
+	}, \
+}
+```
 
 ### 注释
 #### 1. tms结构体

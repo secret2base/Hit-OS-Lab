@@ -119,7 +119,7 @@ void schedule(void)
 			{
 				(*p)->state=TASK_RUNNING;
                 /*** 可中断睡眠->就绪 ***/
-                fprintk(3,"%d\tJ%d\n",(*p)->pid,jiffies);
+                fprintk(3,"%d\tJ\t%d\n",(*p)->pid,jiffies);
 			}
 		}
 
