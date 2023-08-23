@@ -1,11 +1,19 @@
 ### Lab 4 基于内核栈切换的进程切换
-将Linux 0.11中基于tss的进程切换换成基于栈切换的进程切换
+- 将Linux 0.11中采用的TSS切换部分去掉，换成基于堆栈切换
+  - 修改schedule
+  - 重写switch_to，实现压栈、切换PCB、重写TSS指针、切换内核栈、切换LDT等任务
+  - 修改copy_process，以实现进程切换时的内核栈切换
 
-- 编写汇编程序switch_to
-- 完成PCB切换，内核栈切换，LDT切换
-- 修改fork.c，使其可以完成栈切换
-- 修改PCB，task_struct结构
 
-Q  
-- switch_to为什么放在system_call.s里，而不是sched.h里
-- https://github.com/iLoveTangY/hit-oslab/blob/master/lab_5.md
+#### 4.1 修改schedule
+在kernel/sched.c中
+```c
+//原schedule()函数如下
+if ((*p)->state == TASK_RUNNING && (*p)->counter > c)
+    c = (*p)->counter, next = i;
+
+//......
+
+switch_to(next);
+//其中next为下一个进程对应的下标（在task[]数组中）
+```
