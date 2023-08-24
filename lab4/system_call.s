@@ -69,6 +69,8 @@ nr_system_calls = 72
 .globl system_call,sys_fork,timer_interrupt,sys_execve
 .globl hd_interrupt,floppy_interrupt,parallel_interrupt
 .globl device_not_available, coprocessor_error
+.globl switch_to
+.globl first_return_from_kernel
 
 .align 2
 bad_sys_call:
@@ -259,6 +261,19 @@ switch_to:
         popl %ecx
         popl %ebp  # 恢复栈帧基地址
         ret
+
+/* kernel/system_call.s */
+.align 2
+first_return_from_kernel:
+    popl %edx
+    popl %edi
+    popl %esi
+    pop %gs
+    pop %fs
+    pop %es
+    pop %ds
+    iret
+
 hd_interrupt:
 	pushl %eax
 	pushl %ecx

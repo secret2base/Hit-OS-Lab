@@ -18,6 +18,7 @@
 #include <asm/system.h>
 
 extern void write_verify(unsigned long address);
+extern void first_return_from_kernel(void);
 
 long last_pid=0;
 
@@ -79,9 +80,6 @@ int copy_process(int nr,long ebp,long edi,long esi,long gs,long none,
 	p = (struct task_struct *) get_free_page();
 	if (!p)
 		return -EAGAIN;
-	/* 输出新建进程的信息到日志文件中 */
-	/* 此时为新建态('N')*/
-	fprintk(3, "%ld\t%c\t%ld\n", last_pid, 'N', jiffies);
 	
 	/* 子进程内核栈位置 */
 	krnstack = (long *)(PAGE_SIZE + (long)p);
@@ -166,8 +164,6 @@ int copy_process(int nr,long ebp,long edi,long esi,long gs,long none,
 	set_tss_desc(gdt+(nr<<1)+FIRST_TSS_ENTRY,&(p->tss));
 	set_ldt_desc(gdt+(nr<<1)+FIRST_LDT_ENTRY,&(p->ldt));
 	p->state = TASK_RUNNING;	/* do this last, just in case */
-	/* 进程至此进入就绪态('J') */
-	fprintk(3, "%ld\t%c\t%ld\n", p->pid, 'J', jiffies);
 	return last_pid;  // 父进程中的返回值
 }
 

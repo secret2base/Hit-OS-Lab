@@ -49,7 +49,7 @@ extern void mem_use(void);
 
 extern int timer_interrupt(void);
 extern int system_call(void);
-extern int switch_to(struct task_struct *pnext,unsigned lobg ldt);
+extern int switch_to(struct task_struct *pnext,unsigned long ldt);
 
 union task_union {
 	struct task_struct task;
@@ -128,6 +128,7 @@ void schedule(void)
 	while (1) {
 		c = -1;
 		next = 0;
+		pnext=task[next];
 		i = NR_TASKS;
 		p = &task[NR_TASKS];
 		while (--i) {
@@ -142,7 +143,7 @@ void schedule(void)
 				(*p)->counter = ((*p)->counter >> 1) +
 						(*p)->priority;
 	}
-	switch_to(pnext,LDT(next));
+	switch_to(pnext,_LDT(next));
 }
 
 int sys_pause(void)
