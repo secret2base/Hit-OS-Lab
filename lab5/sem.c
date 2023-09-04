@@ -1,71 +1,139 @@
-//kernel/sem.c
-#include <sem.h>
-#include <string.h> /* strcpy()  strcmp() */
-#include <asm/segment.h>  /* get_fs_byte() */
-#include <unistd.h>  /* NULL */
-#include <asm/system.h>  /* cli()  sti() */
-#include <linux/kernel.h>  /* printk() */
-
-#define MAX_SEM 5
-
-static sem_t sems[MAX_SEM]={
-    {"",0,NULL},
-    {"",0,NULL},
-    {"",0,NULL},
-    {"",0,NULL},
-    {"",0,NULL},
-}
-
-//创建新信号量
-sem_t* sys_sem_open(const char* name, unsigned int value){
-    if(name==NULL)    printk("Name is empty.\n");
-    int i;
-    sem_t* tmp;
-    for(i=0;i<MAX_SEM;i++){
-        if(strcmp(sems[i],"")!=0){
-            strcpy(&sems[i].name,name);
-            sems[i].value=value;
-            tmp=&sems[i];
-            break;
+#include <linux/sem.h>
+#include <linux/sched.h>
+#include <unistd.h>
+#include <asm/segment.h>
+#include <linux/tty.h>
+#include <linux/kernel.h>
+#include <linux/fdreg.h>
+#include <asm/system.h>
+#include <asm/io.h>
+//#include <string.h>
+ 
+sem_t semtable[SEMTABLE_LEN];  /* 定义一个信号量表 */
+int cnt = 0;
+ 
+sem_t *sys_sem_open(const char *name,unsigned int value)
+{
+    char kernelname[100];   
+    int isExist = 0;
+    int i = 0;
+    int name_cnt = 0;
+ 
+    while( get_fs_byte(name+name_cnt) != '\0' )
+        name_cnt++;
+ 
+    if( name_cnt > SEM_NAME_LEN )
+        return NULL;
+ 
+    /* 从用户态复制到内核态 */
+    for(i=0;i<name_cnt;i++)
+        kernelname[i] = get_fs_byte(name+i);
+ 
+    int name_len = strlen(kernelname);
+    int sem_name_len = 0;
+    sem_t *p = NULL;
+ 
+    for(i=0;i<cnt;i++)
+    {
+        sem_name_len = strlen(semtable[i].name);
+        if(sem_name_len == name_len)
+        {
+                if( !strcmp(kernelname,semtable[i].name) )
+                {
+                    isExist = 1;
+                    break;
+                }
         }
     }
-    return tmp;
-}
-
-//信号量P操作
-int sys_sem_wait(sem_t* sem){
-    cli();
-    while(sem->value==0){
-        sleep_on(&sem->wait_queue);
+ 
+    if(isExist == 1)
+    {
+        p = (sem_t*)(&semtable[i]);
+        //printk("find previous name!\n");
     }
+    else
+    {
+        i = 0;
+        for(i=0;i<name_len;i++)
+        {
+            semtable[cnt].name[i] = kernelname[i];
+        }
+        semtable[cnt].value = value;
+        p = (sem_t*)(&semtable[cnt]);
+        //printk("creat name!\n");
+        cnt++;
+    }
+    return p;
+}
+ 
+ 
+int sys_sem_wait(sem_t *sem)
+{
+    cli();   /* 关中断 */
+ 
+    while( sem->value <= 0 )
+        sleep_on( &(sem->queue) );    /* 所有小于0的进程都阻塞 */
     sem->value--;
-    sti();
-    return 0;
+             
+    sti();   /* 开中断 */
+    return 0;   
 }
-
-//信号量V操作
-int sys_sem_post(sem_t* sem){
+ 
+ 
+int sys_sem_post(sem_t *sem)
+{
     cli();
-
-    wake_up(&sem->wait_queue);
     sem->value++;
-
+    if( (sem->value) <= 1 )
+        wake_up( &(sem->queue) );
     sti();
     return 0;
 }
-
-//移除信号量
-int sys_sem_unlink(const char* name){
-    if(name==NULL)  printk("Name is empty.\n");
-    char tmp[MAX_NAME];
-    strcpy(tmp,name);
-    int i;
-    for(i=0;i<MAX_SEM;i++){
-        if(strcmp(tmp,name)==0){
-            sems[i].name[0]='\0';
-            sems[i].value=0;
-            sems[i].wait_queue=NULL;
+ 
+ 
+int sys_sem_unlink(const char *name)
+{
+    char kernelname[100];   /* 应该足够大了 */
+    int isExist = 0;
+    int i = 0;
+    int name_cnt = 0;
+ 
+    while( get_fs_byte(name+name_cnt) != '\0' )
+        name_cnt++;
+ 
+    if( name_cnt > SEM_NAME_LEN )
+        return NULL;
+ 
+    for(i=0;i<name_cnt;i++)
+        kernelname[i] = get_fs_byte(name+i);
+ 
+    int name_len = strlen(name);
+    int sem_name_len = 0;
+ 
+    for(i=0;i<cnt;i++)
+    {
+        sem_name_len = strlen(semtable[i].name);
+        if(sem_name_len == name_len)
+        {
+            if( !strcmp(kernelname,semtable[i].name) )
+            {
+                isExist = 1;
+                break;
+            }
         }
     }
-    return 0;
+ 
+    if(isExist == 1)
+    {
+        int tmp = 0;
+ 
+        for(tmp=i;tmp<=cnt;tmp++)
+        {
+            semtable[tmp] = semtable[tmp+1];
+        }
+        cnt = cnt-1;
+        return 0;
+    }
+    else
+        return -1;
 }
