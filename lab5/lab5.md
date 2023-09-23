@@ -8,6 +8,9 @@
   - 缓冲区同时最多保存10个数
   - 
 - 在0.11中实现信号量，并用生产者消费者程序检验
+
+
+#### 5.1 编写生产者消费者程序
 ```c
 sem_t *sem_open(const char * name,unsigned int value);
 int sem_wait(sem_t *sem);
